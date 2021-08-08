@@ -150,7 +150,7 @@ func main() {
 	log.Infof("Listening for metrics and healthchecks on %s", listenAddr)
 
 	http.Handle("/metrics", promhttp.Handler())
-	http.HandleFunc("/livez", healthcheckHandler)
+	http.HandleFunc("/livez", healthcheckHandler) /* useful for k8s healthchecks */
 	http.HandleFunc("/healthz", healthcheckHandler)
 	http.ListenAndServe(listenAddr, nil)
 }
