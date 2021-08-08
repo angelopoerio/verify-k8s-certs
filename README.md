@@ -22,9 +22,11 @@ docker build -t verify-k8s-certs .
 # How to run
 Be sure to run the daemon as a kubernetes **deployment**, you should also expose it as a **service** so Prometheus can
 scrape the metrics from its endpoints.
+
 The service needs permission to list all the **namespaces** and all the services of the cluster
 so be sure to use a **serviceaccount** with these privileges otherwise it will not work!
-When the deployment runs on the cluster with no errors then you should add to to the **scrape_config** section of your Prometheus instance a new job
+
+When the deployment is successfully deployed on the cluster and runs with no errors then you should add to to the **scrape_config** section of your Prometheus instance a new job
 to instruct it to scrape the metrics.  
 
 # Metrics
