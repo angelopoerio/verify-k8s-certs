@@ -37,7 +37,7 @@ var (
 	})
 )
 
-func testTLS(tlsTimeout time.Duration, svc string, namespace string, port int32) bool {
+func testTLS(tlsTimeout time.Duration, svc string, namespace string, port int32) (bool, int) {
 	fullhostname := fmt.Sprintf("%s.%s.svc.cluster.local:%d", svc, namespace, port)
 
 	conf := tls.Config{
@@ -51,7 +51,7 @@ func testTLS(tlsTimeout time.Duration, svc string, namespace string, port int32)
 	conn, err := tls.DialWithDialer(dialer, "tcp", fullhostname, &conf)
 	if err != nil {
 		log.Errorf("Could not start a TLS connection to %s: %v\n", fullhostname, err)
-		return false
+		return false, 0
 	}
 
 	defer conn.Close()
@@ -59,19 +59,21 @@ func testTLS(tlsTimeout time.Duration, svc string, namespace string, port int32)
 	_, err = conn.Write([]byte("ping\n"))
 	if err != nil {
 		log.Errorf("Could not send data to %s: %v\n", fullhostname, err)
-		return false
+		return false, 0
 	}
 
 	certs := conn.ConnectionState().PeerCertificates
 	certsExpiryDates := make([]string, 10)
+	discoveredTLScerts := 0
 	for _, cert := range certs {
+		discoveredTLScerts++
 		certsExpiryDates = append(certsExpiryDates, cert.NotAfter.Format("2006-January-02"))
 		timeToExpiration := cert.NotAfter.Sub(time.Now())
 		expiredCertsGauge.WithLabelValues(namespace, svc, strconv.Itoa(int(port)), cert.Issuer.CommonName, cert.Issuer.SerialNumber).Set(timeToExpiration.Seconds())
 	}
 
 	log.Infof("TLS connection was successful to %s. Certs expiration dates: %v\n", fullhostname, certsExpiryDates)
-	return true
+	return true, discoveredTLScerts
 }
 
 func discoverServices(discoverFrequency time.Duration, tlsTimeout time.Duration) int {
@@ -99,8 +101,8 @@ func discoverServices(discoverFrequency time.Duration, tlsTimeout time.Duration)
 			ports := svc.Spec.Ports
 
 			for _, port := range ports {
-				if testTLS(tlsTimeout, svc.GetName(), svc.GetNamespace(), port.Port) {
-					discoveredTLScertificates += 1
+				if ok, certsNum := testTLS(tlsTimeout, svc.GetName(), svc.GetNamespace(), port.Port); ok {
+					discoveredTLScertificates += certsNum
 				}
 			}
 
