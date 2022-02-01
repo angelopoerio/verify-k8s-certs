@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -76,7 +77,7 @@ func testTLS(tlsTimeout time.Duration, svc string, namespace string, port int32)
 	return true, discoveredTLScerts
 }
 
-func discoverServices(discoverFrequency time.Duration, tlsTimeout time.Duration) int {
+func discoverServices(discoverFrequency time.Duration, tlsTimeout time.Duration, skipNamespaceRegex string) int {
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -85,6 +86,12 @@ func discoverServices(discoverFrequency time.Duration, tlsTimeout time.Duration)
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
+		panic(err.Error())
+	}
+
+	r, err := regexp.Compile(skipNamespaceRegex)
+
+	if skipNamespaceRegex != "" && err != nil {
 		panic(err.Error())
 	}
 
@@ -99,9 +106,16 @@ func discoverServices(discoverFrequency time.Duration, tlsTimeout time.Duration)
 
 		for _, svc := range services.Items {
 			ports := svc.Spec.Ports
+			ns := svc.GetNamespace()
+			svcName := svc.GetName()
+
+			if skipNamespaceRegex != "" && r.Match([]byte(ns)) {
+				log.Infof("Skipping service:%s in namespace: %s", svcName, ns)
+				continue
+			}
 
 			for _, port := range ports {
-				if ok, certsNum := testTLS(tlsTimeout, svc.GetName(), svc.GetNamespace(), port.Port); ok {
+				if ok, certsNum := testTLS(tlsTimeout, svcName, ns, port.Port); ok {
 					discoveredTLScertificates += certsNum
 				}
 			}
@@ -125,6 +139,7 @@ func main() {
 
 	discoverFrequency := flag.String("frequency", "2h", "How often to scan for new TLS certs")
 	tlsTimeout := flag.String("timeout", "400ms", "Connection timeout to TLS endpoints")
+	skipNamespaceRegex := flag.String("skip-namespace-regex", "", "Namespaces matching this regex get skipped")
 	port := flag.Int("port", 9999, "the tcp port where to listen on")
 	flag.Parse()
 
@@ -142,7 +157,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	go discoverServices(discoverFrequencyDuration, tlsTimeoutDuration)
+	go discoverServices(discoverFrequencyDuration, tlsTimeoutDuration, *skipNamespaceRegex)
 
 	healthcheckHandler := func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Mi sento bene!")
